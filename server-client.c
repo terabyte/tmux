@@ -98,6 +98,8 @@ server_client_create(int fd)
 	c->tty.mouse.flags = 0;
 
 	c->flags |= CLIENT_FOCUSED;
+	c->keytable = key_bindings_get_table("root", 1);
+    c->keytable->references++;
 
 	evtimer_set(&c->repeat_timer, server_client_repeat_timer, c);
 
@@ -169,6 +171,8 @@ server_client_lost(struct client *c)
 	close(c->cwd);
 
 	evtimer_del(&c->repeat_timer);
+
+	key_bindings_unref_table(c->keytable);
 
 	if (event_initialized(&c->identify_timer))
 		evtimer_del(&c->identify_timer);
@@ -361,12 +365,14 @@ server_client_assume_paste(struct session *s)
 void
 server_client_handle_key(struct client *c, int key)
 {
-	struct session		*s;
-	struct window		*w;
-	struct window_pane	*wp;
-	struct timeval		 tv;
-	struct key_binding	*bd;
-	int		      	 xtimeout, isprefix, ispaste;
+	struct session			*s;
+	struct window			*w;
+	struct window_pane		*wp;
+	struct timeval			 tv;
+	struct key_table		*table;
+	struct key_binding		 bd_search;
+	struct key_binding		*bd;
+	int				 xtimeout, isprefix, ispaste;
 
 	/* Check the client is good to accept input. */
 	if ((c->flags & (CLIENT_DEAD|CLIENT_SUSPENDED)) != 0)
@@ -428,64 +434,82 @@ server_client_handle_key(struct client *c, int key)
 
 	/* Treat prefix as a regular key when pasting is detected. */
 	ispaste = server_client_assume_paste(s);
-	if (ispaste)
-		isprefix = 0;
-
-	/* No previous prefix key. */
-	if (!(c->flags & CLIENT_PREFIX)) {
-		if (isprefix) {
-			c->flags |= CLIENT_PREFIX;
-			server_status_client(c);
-			return;
-		}
-
-		/* Try as a non-prefix key binding. */
-		if (ispaste || (bd = key_bindings_lookup(key)) == NULL) {
-			if (!(c->flags & CLIENT_READONLY))
-				window_pane_key(wp, s, key);
-		} else
-			key_bindings_dispatch(bd, c);
-		return;
-	}
-
-	/* Prefix key already pressed. Reset prefix and lookup key. */
-	c->flags &= ~CLIENT_PREFIX;
-	server_status_client(c);
-	if ((bd = key_bindings_lookup(key | KEYC_PREFIX)) == NULL) {
-		/* If repeating, treat this as a key, else ignore. */
-		if (c->flags & CLIENT_REPEAT) {
-			c->flags &= ~CLIENT_REPEAT;
-			if (isprefix)
-				c->flags |= CLIENT_PREFIX;
-			else if (!(c->flags & CLIENT_READONLY))
-				window_pane_key(wp, s, key);
-		}
-		return;
-	}
-
-	/* If already repeating, but this key can't repeat, skip it. */
-	if (c->flags & CLIENT_REPEAT && !bd->can_repeat) {
-		c->flags &= ~CLIENT_REPEAT;
-		if (isprefix)
-			c->flags |= CLIENT_PREFIX;
-		else if (!(c->flags & CLIENT_READONLY))
+	if (ispaste) {
+		if (!(c->flags & CLIENT_READONLY))
 			window_pane_key(wp, s, key);
 		return;
 	}
 
-	/* If this key can repeat, reset the repeat flags and timer. */
-	xtimeout = options_get_number(&s->options, "repeat-time");
-	if (xtimeout != 0 && bd->can_repeat) {
-		c->flags |= CLIENT_PREFIX|CLIENT_REPEAT;
+	/* Try to see if we hit a key binding. */
+	for (;;) {
+		bd_search.key = key;
+		if ((bd = RB_FIND(key_bindings, &(c->keytable->key_bindings), &bd_search)) != NULL) {
+			if ((c->flags & CLIENT_REPEAT) && !bd->can_repeat) {
+				/* We don't honor repeating into a non-repeat binding, fall back to root and try again */
+				server_keytable_client(c, "root");
+				c->flags &= ~CLIENT_REPEAT;
+				server_status_client(c);
+				continue;
+			}
 
-		tv.tv_sec = xtimeout / 1000;
-		tv.tv_usec = (xtimeout % 1000) * 1000L;
-		evtimer_del(&c->repeat_timer);
-		evtimer_add(&c->repeat_timer, &tv);
+			/* Hold a reference to this table to make sure the key binding doesn't disappear */
+			table = c->keytable;
+			table->references++;
+
+			xtimeout = options_get_number(&s->options, "repeat-time");
+			if (xtimeout != 0 && bd->can_repeat) {
+				/* Now repeating in same keytable */
+				c->flags |= CLIENT_REPEAT;
+
+				tv.tv_sec = xtimeout / 1000;
+				tv.tv_usec = (xtimeout % 1000) * 1000L;
+				evtimer_del(&c->repeat_timer);
+				evtimer_add(&c->repeat_timer, &tv);
+			}
+			else {
+				/* "Stop" (or don't start) repeating */
+				c->flags &= ~CLIENT_REPEAT;
+				server_keytable_client(c, "root");
+			}
+
+			server_status_client(c);
+			key_bindings_dispatch(bd, c);
+
+			key_bindings_unref_table(table);
+			return;
+		}
+
+		if (c->flags & CLIENT_REPEAT) {
+			/* We missed, but we were in repeat, fall back to root and try again */
+			server_keytable_client(c, "root");
+			c->flags &= ~CLIENT_REPEAT;
+			server_status_client(c);
+			continue;
+		}
+
+		/* Actual miss */
+		break;
 	}
 
-	/* Dispatch the command. */
-	key_bindings_dispatch(bd, c);
+	/* A miss in a non-root keytable fails out to root */
+	if (strcmp(c->keytable->name, "root")) {
+		server_keytable_client(c, "root");
+		server_status_client(c);
+		return;
+	}
+
+	/* A prefix miss in root switched to prefix */
+	if (isprefix) {
+		/* Prefix key switches to prefix table */
+		server_keytable_client(c, "prefix");
+		server_status_client(c);
+		return;
+	}
+
+	/* Anything else in root is straight through */
+	if (!(c->flags & CLIENT_READONLY)) {
+		window_pane_key(wp, s, key);
+	}
 }
 
 /* Client functions that need to happen every loop. */
@@ -701,9 +725,9 @@ server_client_repeat_timer(unused int fd, unused short events, void *data)
 	struct client	*c = data;
 
 	if (c->flags & CLIENT_REPEAT) {
-		if (c->flags & CLIENT_PREFIX)
-			server_status_client(c);
-		c->flags &= ~(CLIENT_PREFIX|CLIENT_REPEAT);
+		server_keytable_client(c, "root");
+		c->flags &= ~CLIENT_REPEAT;
+		server_status_client(c);
 	}
 }
 

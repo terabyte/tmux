@@ -50,12 +50,13 @@ const struct cmd_entry cmd_list_commands_entry = {
 enum cmd_retval
 cmd_list_keys_exec(struct cmd *self, struct cmd_q *cmdq)
 {
-	struct args		*args = self->args;
-	struct key_binding	*bd;
-	const char		*key;
-	char			 tmp[BUFSIZ], flags[8];
-	size_t			 used;
-	int			 width, keywidth;
+	struct args			*args = self->args;
+	struct key_table		*table;
+	struct key_binding		*bd;
+	const char			*key;
+	char				 tmp[BUFSIZ];
+	size_t				 used;
+	int				 hasrepeat, maxtablewidth, tablewidth, maxkeywidth, keywidth;
 
 	if (self->entry == &cmd_list_commands_entry)
 		return (cmd_list_keys_commands(self, cmdq));
@@ -63,46 +64,45 @@ cmd_list_keys_exec(struct cmd *self, struct cmd_q *cmdq)
 	if (args_has(args, 't'))
 		return (cmd_list_keys_table(self, cmdq));
 
-	width = 0;
+	hasrepeat = 0;
+	maxtablewidth = 0;
+	maxkeywidth = 0;
 
-	RB_FOREACH(bd, key_bindings, &key_bindings) {
-		key = key_string_lookup_key(bd->key & ~KEYC_PREFIX);
-		if (key == NULL)
-			continue;
+	RB_FOREACH(table, key_tables, &key_tables) {
+		RB_FOREACH(bd, key_bindings, &(table->key_bindings)) {
+			key = key_string_lookup_key(bd->key);
+			if (key == NULL)
+				continue;
 
-		keywidth = strlen(key);
-		if (!(bd->key & KEYC_PREFIX)) {
 			if (bd->can_repeat)
-				keywidth += 4;
-			else
-				keywidth += 3;
-		} else if (bd->can_repeat)
-			keywidth += 3;
-		if (keywidth > width)
-			width = keywidth;
+				hasrepeat = 1;
+
+			tablewidth = strlen(table->name);
+			if (tablewidth > maxtablewidth)
+				maxtablewidth = tablewidth;
+
+			keywidth = strlen(key);
+			if (keywidth > maxkeywidth)
+				maxkeywidth = keywidth;
+		}
 	}
 
-	RB_FOREACH(bd, key_bindings, &key_bindings) {
-		key = key_string_lookup_key(bd->key & ~KEYC_PREFIX);
-		if (key == NULL)
-			continue;
+	RB_FOREACH(table, key_tables, &key_tables) {
+		RB_FOREACH(bd, key_bindings, &(table->key_bindings)) {
+			key = key_string_lookup_key(bd->key);
+			if (key == NULL)
+				continue;
 
-		*flags = '\0';
-		if (!(bd->key & KEYC_PREFIX)) {
-			if (bd->can_repeat)
-				xsnprintf(flags, sizeof flags, "-rn ");
-			else
-				xsnprintf(flags, sizeof flags, "-n ");
-		} else if (bd->can_repeat)
-			xsnprintf(flags, sizeof flags, "-r ");
+			used = xsnprintf(tmp, sizeof tmp, "%s-T %-*s %-*s ",
+				(hasrepeat ? (bd->can_repeat ? "-r " : "   ") : ""),
+				(int) maxtablewidth, table->name,
+				(int) maxkeywidth, key);
+			if (used >= sizeof tmp)
+				continue;
 
-		used = xsnprintf(tmp, sizeof tmp, "%s%*s ",
-		    flags, (int) (width - strlen(flags)), key);
-		if (used >= sizeof tmp)
-			continue;
-
-		cmd_list_print(bd->cmdlist, tmp + used, (sizeof tmp) - used);
-		cmdq_print(cmdq, "bind-key %s", tmp);
+			cmd_list_print(bd->cmdlist, tmp + used, (sizeof tmp) - used);
+			cmdq_print(cmdq, "bind-key %s", tmp);
+		}
 	}
 
 	return (CMD_RETURN_NORMAL);

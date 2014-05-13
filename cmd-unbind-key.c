@@ -31,8 +31,8 @@ enum cmd_retval	 cmd_unbind_key_mode_table(struct cmd *, struct cmd_q *, int);
 
 const struct cmd_entry cmd_unbind_key_entry = {
 	"unbind-key", "unbind",
-	"acnt:", 0, 1,
-	"[-acn] [-t mode-table] key",
+	"acnt:T:", 0, 1,
+	"[-acn] [-t mode-table] [-T key-table] key",
 	0,
 	cmd_unbind_key_exec
 };
@@ -41,7 +41,6 @@ enum cmd_retval
 cmd_unbind_key_exec(struct cmd *self, struct cmd_q *cmdq)
 {
 	struct args		*args = self->args;
-	struct key_binding	*bd;
 	int			 key;
 
 	if (!args_has(args, 'a')) {
@@ -66,16 +65,26 @@ cmd_unbind_key_exec(struct cmd *self, struct cmd_q *cmdq)
 		return (cmd_unbind_key_mode_table(self, cmdq, key));
 
 	if (key == KEYC_NONE) {
-		while (!RB_EMPTY(&key_bindings)) {
-			bd = RB_ROOT(&key_bindings);
-			key_bindings_remove(bd->key);
+		if (args_has(args, 'T')) {
+			key_bindings_remove_table(args_get(args, 'T'));
+			return (CMD_RETURN_NORMAL);
 		}
+		key_bindings_remove_table("root");
+		key_bindings_remove_table("prefix");
 		return (CMD_RETURN_NORMAL);
 	}
 
-	if (!args_has(args, 'n'))
-		key |= KEYC_PREFIX;
-	key_bindings_remove(key);
+	if (args_has(args, 'T')) {
+		key_bindings_remove(args_get(args, 'T'), key);
+		return (CMD_RETURN_NORMAL);
+	}
+
+	if (args_has(args, 'n')) {
+		key_bindings_remove("root", key);
+		return (CMD_RETURN_NORMAL);
+	}
+
+	key_bindings_remove("prefix", key);
 	return (CMD_RETURN_NORMAL);
 }
 
