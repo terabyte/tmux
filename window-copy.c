@@ -115,6 +115,8 @@ static void	window_copy_scroll_down(struct window_mode_entry *, u_int);
 static void	window_copy_rectangle_toggle(struct window_mode_entry *);
 static void	window_copy_move_mouse(struct mouse_event *);
 static void	window_copy_drag_update(struct client *, struct mouse_event *);
+static void	window_copy_left_prune(struct window_mode_entry *);
+static void	window_copy_right_prune(struct window_mode_entry *);
 
 const struct window_mode window_copy_mode = {
 	.name = "copy-mode",
@@ -199,6 +201,11 @@ struct window_copy_mode_data {
 
 	u_int		 cx;
 	u_int		 cy;
+
+	int		leftprunex_set;
+	u_int		leftprunex;
+	int		rightprunex_set;
+	u_int		rightprunex;
 
 	u_int		 lastcx; 	/* position in last line w/ content */
 	u_int		 lastsx;	/* size of last line w/ content */
@@ -876,6 +883,13 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 			data->cy = 0;
 			window_copy_update_selection(wme, 1);
 			redraw = 1;
+		}
+
+		if (strcmp(command, "left-prune") == 0) {
+			window_copy_left_prune(wme);
+		}
+		if (strcmp(command, "right-prune") == 0) {
+			window_copy_right_prune(wme);
 		}
 	} else if (args->argc == 2 && *args->argv[1] != '\0') {
 		argument = args->argv[1];
@@ -1555,7 +1569,7 @@ window_copy_set_selection(struct window_mode_entry *wme, int may_redraw)
 	struct screen			*s = &data->screen;
 	struct options			*oo = wp->window->options;
 	struct grid_cell		 gc;
-	u_int				 sx, sy, cy, endsx, endsy;
+	u_int				 sx, sy, cy, endsx, endsy, leftprunex, rightprunex;
 	int				 startrelpos, endrelpos;
 
 	window_copy_synchronize_cursor(wme);
@@ -1576,12 +1590,14 @@ window_copy_set_selection(struct window_mode_entry *wme, int may_redraw)
 		screen_hide_selection(s);
 		return (0);
 	}
+	leftprunex = data->leftprunex_set ? data->leftprunex : 0;
+	rightprunex = data->rightprunex_set ? data->rightprunex : (screen_size_x(s) - 1);
 
 	/* Set colours and selection. */
 	style_apply(&gc, oo, "mode-style");
 	gc.flags |= GRID_FLAG_NOPALETTE;
 	screen_set_selection(s, sx, sy, endsx, endsy, data->rectflag,
-	    data->modekeys, &gc);
+	    data->modekeys, leftprunex, rightprunex, &gc);
 
 	if (data->rectflag && may_redraw) {
 		/*
@@ -1700,6 +1716,23 @@ window_copy_get_selection(struct window_mode_entry *wme, size_t *len)
 		restex = xx;
 		firstsx = sx;
 		restsx = 0;
+	}
+
+	if (data->leftprunex_set) {
+		if (firstsx < data->leftprunex) {
+			firstsx = data->leftprunex;
+		}
+		if (restsx < data->leftprunex) {
+			restsx = data->leftprunex;
+		}
+	}
+	if (data->rightprunex_set) {
+		if (restex > data->rightprunex + 1) {
+			restex = data->rightprunex + 1;
+		}
+		if (lastex > data->rightprunex + 1) {
+			lastex = data->rightprunex + 1;
+		}
 	}
 
 	/* Copy the lines. */
@@ -2611,4 +2644,28 @@ window_copy_drag_update(struct client *c, struct mouse_event *m)
 	window_copy_update_cursor(wme, x, y);
 	if (window_copy_update_selection(wme, 1))
 		window_copy_redraw_selection(wme, old_cy);
+}
+
+void
+window_copy_left_prune(struct window_mode_entry *wme)
+{
+	struct window_copy_mode_data	*data = wme->data;
+	if (!data->rightprunex_set || data->cx <= data->rightprunex) {
+		data->leftprunex = data->cx;
+		data->leftprunex_set = 1;
+		window_copy_update_selection(wme, 1);
+		window_copy_redraw_screen(wme);
+	}
+}
+
+void
+window_copy_right_prune(struct window_mode_entry *wme)
+{
+	struct window_copy_mode_data	*data = wme->data;
+	if (!data->leftprunex_set || data->cx >= data->leftprunex) {
+		data->rightprunex = data->cx;
+		data->rightprunex_set = 1;
+		window_copy_update_selection(wme, 1);
+		window_copy_redraw_screen(wme);
+	}
 }

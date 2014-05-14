@@ -36,6 +36,9 @@ struct screen_sel {
 	u_int		 ex;
 	u_int		 ey;
 
+	u_int leftprunex;
+	u_int rightprunex;
+
 	struct grid_cell cell;
 };
 
@@ -305,7 +308,8 @@ screen_resize_y(struct screen *s, u_int sy)
 /* Set selection. */
 void
 screen_set_selection(struct screen *s, u_int sx, u_int sy,
-    u_int ex, u_int ey, u_int rectangle, int modekeys, struct grid_cell *gc)
+    u_int ex, u_int ey, u_int rectangle, int modekeys, u_int leftprunex, u_int rightprunex,
+    struct grid_cell *gc)
 {
 	if (s->sel == NULL)
 		s->sel = xcalloc(1, sizeof *s->sel);
@@ -319,6 +323,9 @@ screen_set_selection(struct screen *s, u_int sx, u_int sy,
 	s->sel->sy = sy;
 	s->sel->ex = ex;
 	s->sel->ey = ey;
+
+	s->sel->leftprunex = leftprunex;
+	s->sel->rightprunex = rightprunex;
 }
 
 /* Clear selection. */
@@ -345,6 +352,12 @@ screen_check_selection(struct screen *s, u_int px, u_int py)
 	u_int			 xx;
 
 	if (sel == NULL || sel->hidden)
+		return (0);
+
+	if (px < sel->leftprunex)
+		return (0);
+
+	if (px > sel->rightprunex)
 		return (0);
 
 	if (sel->rectangle) {
