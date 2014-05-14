@@ -117,6 +117,7 @@ static void	window_copy_move_mouse(struct mouse_event *);
 static void	window_copy_drag_update(struct client *, struct mouse_event *);
 static void	window_copy_left_prune(struct window_mode_entry *);
 static void	window_copy_right_prune(struct window_mode_entry *);
+static void	window_copy_change_joinmode(struct window_mode_entry *);
 
 const struct window_mode window_copy_mode = {
 	.name = "copy-mode",
@@ -154,6 +155,36 @@ enum {
 	WINDOW_COPY_REL_POS_ABOVE,
 	WINDOW_COPY_REL_POS_ON_SCREEN,
 	WINDOW_COPY_REL_POS_BELOW,
+};
+
+enum window_copy_join_mode {
+	WINDOW_COPY_JOIN_NEWLINE,
+	WINDOW_COPY_JOIN_NONE,
+	WINDOW_COPY_JOIN_SPACE,
+	WINDOW_COPY_JOIN_COMMA,
+	WINDOW_COPY_JOIN_MAX
+};
+
+struct window_copy_join_mode_data {
+	const char *header;
+	const char *delimiter;
+} join_modes[WINDOW_COPY_JOIN_MAX] = {
+	{
+		"",
+		"\n",
+	},
+	{
+		" [joined]",
+		"",
+	},
+	{
+		" [joined with spaces]",
+		" ",
+	},
+	{
+		" [joined with commas]",
+		",",
+	},
 };
 
 /*
@@ -207,6 +238,8 @@ struct window_copy_mode_data {
 	int		rightprunex_set;
 	u_int		rightprunex;
 
+	enum window_copy_join_mode joinmode;
+
 	u_int		 lastcx; 	/* position in last line w/ content */
 	u_int		 lastsx;	/* size of last line w/ content */
 
@@ -234,6 +267,7 @@ window_copy_common_init(struct window_mode_entry *wme)
 
 	data->cursordrag = CURSORDRAG_NONE;
 	data->lineflag = LINE_SEL_NONE;
+	data->joinmode = WINDOW_COPY_JOIN_NEWLINE;
 
 	if (wp->searchstr != NULL) {
 		data->searchtype = WINDOW_COPY_SEARCHUP;
@@ -891,6 +925,10 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 		if (strcmp(command, "right-prune") == 0) {
 			window_copy_right_prune(wme);
 		}
+
+		if (strcmp(command, "change-joinmode") == 0) {
+			window_copy_change_joinmode(wme);
+		}
 	} else if (args->argc == 2 && *args->argv[1] != '\0') {
 		argument = args->argv[1];
 		if (strcmp(command, "copy-pipe") == 0) {
@@ -1372,7 +1410,8 @@ window_copy_write_line(struct window_mode_entry *wme,
 	if (py == 0 && s->rupper < s->rlower) {
 		if (data->searchmark == NULL) {
 			size = xsnprintf(hdr, sizeof hdr,
-			    "[%u/%u]", data->oy, screen_hsize(data->backing));
+			    "[%u/%u]%s", data->oy, screen_hsize(data->backing),
+			    join_modes[data->joinmode].header);
 		} else {
 			if (data->searchthis == -1) {
 				size = xsnprintf(hdr, sizeof hdr,
@@ -1748,7 +1787,7 @@ window_copy_get_selection(struct window_mode_entry *wme, size_t *len)
 		return (NULL);
 	}
 	if (keys == MODEKEY_EMACS || lastex <= ey_last)
-		off -= 1; /* remove final \n (unless at end in vi mode) */
+		off -= strlen(join_modes[data->joinmode].delimiter); /* remove final delimiter (unless at end in vi mode) */
 	*len = off;
 	return (buf);
 }
@@ -1889,10 +1928,11 @@ window_copy_copy_line(struct window_mode_entry *wme, char **buf, size_t *off,
 		}
 	}
 
-	/* Only add a newline if the line wasn't wrapped. */
+	/* Only add a delimiter if the line wasn't wrapped. */
 	if (!wrapped || ex != xx) {
-		*buf = xrealloc(*buf, (*off) + 1);
-		(*buf)[(*off)++] = '\n';
+		*buf = xrealloc(*buf, (*off) + strlen(join_modes[data->joinmode].delimiter));
+		memcpy(*buf + *off, join_modes[data->joinmode].delimiter, strlen(join_modes[data->joinmode].delimiter));
+		*off += strlen(join_modes[data->joinmode].delimiter);
 	}
 }
 
@@ -2668,4 +2708,12 @@ window_copy_right_prune(struct window_mode_entry *wme)
 		window_copy_update_selection(wme, 1);
 		window_copy_redraw_screen(wme);
 	}
+}
+
+void
+window_copy_change_joinmode(struct window_mode_entry *wme)
+{
+	struct window_copy_mode_data	*data = wme->data;
+	data->joinmode = (data->joinmode + 1) % WINDOW_COPY_JOIN_MAX;
+	window_copy_redraw_screen(wme);
 }
