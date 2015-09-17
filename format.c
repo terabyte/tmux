@@ -537,7 +537,8 @@ format_defaults_client(struct format_tree *ft, struct client *c)
 	*strchr(tim, '\n') = '\0';
 	format_add(ft, "client_activity_string", "%s", tim);
 
-	format_add(ft, "client_prefix", "%d", !!(c->flags & CLIENT_PREFIX));
+	format_add(ft, "client_prefix", strcmp(c->keytable->name, "root") ? "1": "0");
+	format_add(ft, "client_key_table", "%s", c->keytable->name);
 
 	if (c->tty.flags & TTY_UTF8)
 		format_add(ft, "client_utf8", "%d", 1);
