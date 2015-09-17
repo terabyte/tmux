@@ -84,6 +84,9 @@ void	window_copy_cursor_previous_word(struct window_pane *, const char *);
 void	window_copy_scroll_up(struct window_pane *, u_int);
 void	window_copy_scroll_down(struct window_pane *, u_int);
 void	window_copy_rectangle_toggle(struct window_pane *);
+void	window_copy_left_prune(struct window_pane *);
+void	window_copy_right_prune(struct window_pane *);
+void	window_copy_change_joinmode(struct window_pane *);
 
 const struct window_mode window_copy_mode = {
 	window_copy_init,
@@ -105,6 +108,36 @@ enum window_copy_input_type {
 	WINDOW_COPY_JUMPTOFORWARD,
 	WINDOW_COPY_JUMPTOBACK,
 	WINDOW_COPY_GOTOLINE,
+};
+
+enum window_copy_join_mode {
+	WINDOW_COPY_JOIN_NEWLINE,
+	WINDOW_COPY_JOIN_NONE,
+	WINDOW_COPY_JOIN_SPACE,
+	WINDOW_COPY_JOIN_COMMA,
+	WINDOW_COPY_JOIN_MAX
+};
+
+struct window_copy_join_mode_data {
+	const char *header;
+	const char *delimiter;
+} join_modes[WINDOW_COPY_JOIN_MAX] = {
+	{
+		"",
+		"\n",
+	},
+	{
+		" [joined]",
+		"",
+	},
+	{
+		" [joined with spaces]",
+		" ",
+	},
+	{
+		" [joined with commas]",
+		",",
+	},
 };
 
 /*
@@ -144,6 +177,13 @@ struct window_copy_mode_data {
 	u_int		lastcx; /* position in last line with content */
 	u_int		lastsx; /* size of last line with content */
 
+	int		leftprunex_set;
+	u_int		leftprunex;
+	int		rightprunex_set;
+	u_int		rightprunex;
+
+	enum window_copy_join_mode joinmode;
+
 	enum window_copy_input_type inputtype;
 	const char     *inputprompt;
 	char	       *inputstr;
@@ -171,6 +211,11 @@ window_copy_init(struct window_pane *wp)
 
 	data->lastcx = 0;
 	data->lastsx = 0;
+
+	data->leftprunex_set = 0;
+	data->rightprunex_set = 0;
+
+	data->joinmode = WINDOW_COPY_JOIN_NEWLINE;
 
 	data->backing_written = 0;
 
@@ -734,6 +779,14 @@ window_copy_key(struct window_pane *wp, struct session *sess, int key)
 		s->sel.lineflag = LINE_SEL_NONE;
 		window_copy_rectangle_toggle(wp);
 		break;
+	case MODEKEYCOPY_LEFTPRUNE:
+		window_copy_left_prune(wp);
+		break;
+	case MODEKEYCOPY_RIGHTPRUNE:
+		window_copy_right_prune(wp);
+		break;
+	case MODEKEYCOPY_CHANGEJOINMODE:
+		window_copy_change_joinmode(wp);
 	default:
 		break;
 	}
@@ -1205,7 +1258,8 @@ window_copy_write_line(struct window_pane *wp, struct screen_write_ctx *ctx,
 	last = screen_size_y(s) - 1;
 	if (py == 0) {
 		size = xsnprintf(hdr, sizeof hdr,
-		    "[%u/%u]", data->oy, screen_hsize(data->backing));
+		    "[%u/%u]%s", data->oy, screen_hsize(data->backing),
+		    join_modes[data->joinmode].header);
 		if (size > screen_size_x(s))
 			size = screen_size_x(s);
 		screen_write_cursormove(ctx, screen_size_x(s) - size, 0);
@@ -1330,7 +1384,7 @@ window_copy_update_selection(struct window_pane *wp, int may_redraw)
 	struct screen			*s = &data->screen;
 	struct options			*oo = &wp->window->options;
 	struct grid_cell		 gc;
-	u_int				 sx, sy, ty, cy;
+	u_int				 sx, sy, ty, cy, leftprunex, rightprunex;
 
 	if (!s->sel.flag && s->sel.lineflag == LINE_SEL_NONE)
 		return (0);
@@ -1355,9 +1409,12 @@ window_copy_update_selection(struct window_pane *wp, int may_redraw)
 	} else
 		sy -= ty;
 	sy = screen_hsize(s) + sy;
+	leftprunex = data->leftprunex_set ? data->leftprunex : 0;
+	rightprunex = data->rightprunex_set ? data->rightprunex : (screen_size_x(s) - 1);
 
 	screen_set_selection(s,
-	    sx, sy, data->cx, screen_hsize(s) + data->cy, data->rectflag, &gc);
+	    sx, sy, data->cx, screen_hsize(s) + data->cy, data->rectflag,
+	    leftprunex, rightprunex, &gc);
 
 	if (data->rectflag && may_redraw) {
 		/*
@@ -1463,6 +1520,23 @@ window_copy_get_selection(struct window_pane *wp, size_t *len)
 		restsx = 0;
 	}
 
+	if (data->leftprunex_set) {
+		if (firstsx < data->leftprunex) {
+			firstsx = data->leftprunex;
+		}
+		if (restsx < data->leftprunex) {
+			restsx = data->leftprunex;
+		}
+	}
+	if (data->rightprunex_set) {
+		if (restex > data->rightprunex + 1) {
+			restex = data->rightprunex + 1;
+		}
+		if (lastex > data->rightprunex + 1) {
+			lastex = data->rightprunex + 1;
+		}
+	}
+
 	/* Copy the lines. */
 	for (i = sy; i <= ey; i++) {
 		window_copy_copy_line(wp, &buf, &off, i,
@@ -1476,7 +1550,7 @@ window_copy_get_selection(struct window_pane *wp, size_t *len)
 		return (NULL);
 	}
 	if (keys == MODEKEY_EMACS || lastex <= ey_last)
-		off -= 1; /* remove final \n (unless at end in vi mode) */
+		off -= strlen(join_modes[data->joinmode].delimiter); /* remove final delimiter (unless at end in vi mode) */
 	*len = off;
 	return (buf);
 }
@@ -1624,10 +1698,11 @@ window_copy_copy_line(struct window_pane *wp,
 		}
 	}
 
-	/* Only add a newline if the line wasn't wrapped. */
+	/* Only add a delimiter if the line wasn't wrapped. */
 	if (!wrapped || ex != xx) {
-		*buf = xrealloc(*buf, (*off) + 1);
-		(*buf)[(*off)++] = '\n';
+		*buf = xrealloc(*buf, (*off) + strlen(join_modes[data->joinmode].delimiter));
+		memcpy(*buf + *off, join_modes[data->joinmode].delimiter, strlen(join_modes[data->joinmode].delimiter));
+		*off += strlen(join_modes[data->joinmode].delimiter);
 	}
 }
 
@@ -2257,5 +2332,37 @@ window_copy_rectangle_toggle(struct window_pane *wp)
 		window_copy_update_cursor(wp, px, data->cy);
 
 	window_copy_update_selection(wp, 1);
+	window_copy_redraw_screen(wp);
+}
+
+void
+window_copy_left_prune(struct window_pane *wp)
+{
+	struct window_copy_mode_data	*data = wp->modedata;
+	if (!data->rightprunex_set || data->cx <= data->rightprunex) {
+		data->leftprunex = data->cx;
+		data->leftprunex_set = 1;
+		window_copy_update_selection(wp, 1);
+		window_copy_redraw_screen(wp);
+	}
+}
+
+void
+window_copy_right_prune(struct window_pane *wp)
+{
+	struct window_copy_mode_data	*data = wp->modedata;
+	if (!data->leftprunex_set || data->cx >= data->leftprunex) {
+		data->rightprunex = data->cx;
+		data->rightprunex_set = 1;
+		window_copy_update_selection(wp, 1);
+		window_copy_redraw_screen(wp);
+	}
+}
+
+void
+window_copy_change_joinmode(struct window_pane *wp)
+{
+	struct window_copy_mode_data	*data = wp->modedata;
+	data->joinmode = (data->joinmode + 1) % WINDOW_COPY_JOIN_MAX;
 	window_copy_redraw_screen(wp);
 }
