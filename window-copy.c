@@ -83,7 +83,7 @@ static void	window_copy_copy_buffer(struct window_mode_entry *, void *,
 		    size_t);
 static void	window_copy_copy_pipe(struct window_mode_entry *,
 		    struct session *, const char *);
-static void	window_copy_copy_selection(struct window_mode_entry *);
+static int	window_copy_copy_selection(struct window_mode_entry *);
 static void	window_copy_append_selection(struct window_mode_entry *);
 static void	window_copy_clear_selection(struct window_mode_entry *);
 static void	window_copy_copy_line(struct window_mode_entry *, char **,
@@ -928,6 +928,19 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 
 		if (strcmp(command, "change-joinmode") == 0) {
 			window_copy_change_joinmode(wme);
+		}
+
+		if (strcmp(command, "start-or-copy-selection") == 0) {
+			if (s != NULL) {
+				if(window_copy_copy_selection(wme))
+					window_pane_reset_mode(wp);
+				else {
+					data->lineflag = LINE_SEL_NONE;
+					window_copy_start_selection(wme);
+					window_copy_redraw_screen(wme);
+				}
+				return;
+			}
 		}
 	} else if (args->argc == 2 && *args->argv[1] != '\0') {
 		argument = args->argv[1];
@@ -1831,15 +1844,19 @@ window_copy_copy_pipe(struct window_mode_entry *wme, struct session *s,
 	window_copy_copy_buffer(wme, buf, len);
 }
 
-static void
+static int
 window_copy_copy_selection(struct window_mode_entry *wme)
 {
 	char	*buf;
 	size_t	 len;
 
 	buf = window_copy_get_selection(wme, &len);
-	if (buf != NULL)
-		window_copy_copy_buffer(wme, buf, len);
+	if (buf == NULL)
+		return 0;
+
+	window_copy_copy_buffer(wme, buf, len);
+
+	return 1;
 }
 
 static void
