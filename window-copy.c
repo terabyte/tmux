@@ -787,6 +787,7 @@ window_copy_key(struct window_pane *wp, struct session *sess, int key)
 		break;
 	case MODEKEYCOPY_CHANGEJOINMODE:
 		window_copy_change_joinmode(wp);
+		break;
 	case MODEKEYCOPY_STARTORCOPYSELECTION:
 		if (sess != NULL) {
 			if(window_copy_copy_selection(wp, NULL))
