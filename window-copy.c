@@ -2056,14 +2056,21 @@ window_copy_cursor_back_to_indentation(struct window_mode_entry *wme)
 static void
 window_copy_cursor_end_of_line(struct window_mode_entry *wme)
 {
+	struct window_pane	*wp = wme->wp;
 	struct window_copy_mode_data	*data = wme->data;
 	struct screen			*back_s = data->backing;
 	struct grid			*gd = back_s->grid;
 	struct grid_line		*gl;
 	u_int				 px, py;
+	int				 keys;
 
 	py = screen_hsize(back_s) + data->cy - data->oy;
 	px = window_copy_find_length(wme, py);
+
+	/* Actually, vi '$' doesn't really go "off" the end of the line... */
+	keys = options_get_number(wp->window->options, "mode-keys");
+	if (keys != MODEKEY_EMACS && px > 0)
+		--px;
 
 	if (data->cx == px && data->lineflag == LINE_SEL_NONE) {
 		if (data->screen.sel != NULL && data->rectflag)
