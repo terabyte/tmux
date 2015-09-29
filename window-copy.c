@@ -1734,7 +1734,6 @@ window_copy_cursor_end_of_line(struct window_pane *wp)
 {
 	struct window_copy_mode_data	*data = wp->modedata;
 	struct screen			*back_s = data->backing;
-	struct grid			*gd = back_s->grid;
 	u_int				 px, py;
 
 	py = screen_hsize(back_s) + data->cy - data->oy;
@@ -1744,17 +1743,6 @@ window_copy_cursor_end_of_line(struct window_pane *wp)
 	if (px > 0)
 		--px;
 
-	if (data->cx == px) {
-		if (gd->linedata[py].flags & GRID_LINE_WRAPPED) {
-			while (py < gd->sy + gd->hsize &&
-			    gd->linedata[py].flags & GRID_LINE_WRAPPED) {
-				window_copy_cursor_down(wp, 0);
-				py = screen_hsize(back_s)
-				     + data->cy - data->oy;
-			}
-			px = window_copy_find_length(wp, py);
-		}
-	}
 	window_copy_update_cursor(wp, px, data->cy);
 
 	if (window_copy_update_selection(wp))
