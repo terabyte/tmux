@@ -314,10 +314,7 @@ screen_check_selection(struct screen *s, u_int px, u_int py)
 		if (py == sel->ey && px < sel->ex)
 			return (0);
 
-		if (sel->modekeys == MODEKEY_EMACS)
-			xx = sel->sx - 1;
-		else
-			xx = sel->sx;
+		xx = sel->sx;
 		if (py == sel->sy && px > xx)
 			return (0);
 	} else {
@@ -327,10 +324,7 @@ screen_check_selection(struct screen *s, u_int px, u_int py)
 
 		if (sel->ex < sel->sx) {
 			/* cursor (ex) is on the left */
-			if (sel->modekeys == MODEKEY_EMACS)
-				xx = sel->sx - 1;
-			else
-				xx = sel->sx;
+			xx = sel->sx;
 			if (px > xx || px < sel->ex)
 				return (0);
 		} else {

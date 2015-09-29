@@ -718,8 +718,6 @@ struct screen_sel {
 		LINE_SEL_RIGHT_LEFT,
 	} lineflag;
 
-	int		 modekeys;
-
 	u_int		 sx;
 	u_int		 sy;
 
