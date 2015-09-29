@@ -408,7 +408,6 @@ window_copy_resize(struct window_pane *wp, u_int sx, u_int sy)
 void
 window_copy_key(struct window_pane *wp, struct session *sess, int key)
 {
-	const char			*word_separators;
 	struct window_copy_mode_data	*data = wp->modedata;
 	struct screen			*s = &data->screen;
 	u_int				 n;
