@@ -86,7 +86,7 @@ static void	window_copy_copy_pipe(struct window_mode_entry *,
 static int	window_copy_copy_selection(struct window_mode_entry *);
 static void	window_copy_append_selection(struct window_mode_entry *);
 static void	window_copy_clear_selection(struct window_mode_entry *);
-static void	window_copy_copy_line(struct window_mode_entry *, char **,
+static int	window_copy_copy_line(struct window_mode_entry *, char **,
 		    size_t *, u_int, u_int, u_int);
 static int	window_copy_in_set(struct window_mode_entry *, u_int, u_int,
 		    const char *);
@@ -1602,7 +1602,7 @@ window_copy_get_selection(struct window_mode_entry *wme, size_t *len)
 	struct screen			*s = &data->screen;
 	char				*buf;
 	size_t				 off;
-	u_int				 i, sx, sy, ex, ey, ey_last, t;
+	u_int				 i, sx, sy, ex, ey, ey_last, t, trailing_delimiter;
 	u_int				 firstsx, lastex, restex, restsx, selx;
 
 	if (data->screen.sel == NULL)
@@ -1668,16 +1668,14 @@ window_copy_get_selection(struct window_mode_entry *wme, size_t *len)
 	}
 
 	/* Copy the lines. */
-	i = sy;
-	while (1) {
-		window_copy_copy_line(wme, &buf, &off, i,
+	trailing_delimiter = 0;
+	for (i = sy; i <= ey; ++i) {
+		trailing_delimiter = window_copy_copy_line(wme, &buf, &off, i,
 		    (i == sy ? firstsx : restsx),
 		    (i == ey ? lastex : restex));
-		if (i == ey) {
-			off -= strlen(join_modes[data->joinmode].delimiter); /* remove final delimiter */
-			break;
-		}
-		++i;
+	}
+	if (trailing_delimiter) {
+		off -= strlen(join_modes[data->joinmode].delimiter); /* remove final delimiter */
 	}
 
 	*len = off;
@@ -1771,7 +1769,7 @@ window_copy_append_selection(struct window_mode_entry *wme)
 		free(buf);
 }
 
-static void
+static int
 window_copy_copy_line(struct window_mode_entry *wme, char **buf, size_t *off,
     u_int sy, u_int sx, u_int ex)
 {
@@ -1784,7 +1782,7 @@ window_copy_copy_line(struct window_mode_entry *wme, char **buf, size_t *off,
 	const char			*s;
 
 	if (sx > ex)
-		return;
+		return 0;
 
 	/*
 	 * Work out if the line was wrapped at the screen edge and all of it is
@@ -1829,7 +1827,9 @@ window_copy_copy_line(struct window_mode_entry *wme, char **buf, size_t *off,
 		*buf = xrealloc(*buf, (*off) + strlen(join_modes[data->joinmode].delimiter));
 		memcpy(*buf + *off, join_modes[data->joinmode].delimiter, strlen(join_modes[data->joinmode].delimiter));
 		*off += strlen(join_modes[data->joinmode].delimiter);
+		return 1;
 	}
+	return 0;
 }
 
 static void
