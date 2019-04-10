@@ -759,23 +759,21 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 			for (; np != 0; np--)
 				window_copy_next_paragraph(wme);
 		}
-		if (strcmp(command, "next-space") == 0) {
+		if (strcmp(command, "next-uword") == 0) {
 			for (; np != 0; np--)
-				window_copy_cursor_next_word(wme, " ");
+				window_copy_cursor_next_word(wme, "");
 		}
-		if (strcmp(command, "next-space-end") == 0) {
+		if (strcmp(command, "next-uword-end") == 0) {
 			for (; np != 0; np--)
-				window_copy_cursor_next_word_end(wme, " ");
+				window_copy_cursor_next_word_end(wme, "");
 		}
-		if (strcmp(command, "next-word") == 0) {
-			ws = options_get_string(s->options, "word-separators");
+		if (strcmp(command, "next-lword") == 0) {
 			for (; np != 0; np--)
-				window_copy_cursor_next_word(wme, ws);
+				window_copy_cursor_next_word(wme, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
 		}
-		if (strcmp(command, "next-word-end") == 0) {
-			ws = options_get_string(s->options, "word-separators");
+		if (strcmp(command, "next-lword-end") == 0) {
 			for (; np != 0; np--)
-				window_copy_cursor_next_word_end(wme, ws);
+				window_copy_cursor_next_word_end(wme, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
 		}
 		if (strcmp(command, "other-end") == 0) {
 			if ((np % 2) != 0)
@@ -802,14 +800,13 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 			for (; np != 0; np--)
 				window_copy_previous_paragraph(wme);
 		}
-		if (strcmp(command, "previous-space") == 0) {
+		if (strcmp(command, "previous-uword") == 0) {
 			for (; np != 0; np--)
-				window_copy_cursor_previous_word(wme, " ");
+				window_copy_cursor_previous_word(wme, "");
 		}
-		if (strcmp(command, "previous-word") == 0) {
-			ws = options_get_string(s->options, "word-separators");
+		if (strcmp(command, "previous-lword") == 0) {
 			for (; np != 0; np--)
-				window_copy_cursor_previous_word(wme, ws);
+				window_copy_cursor_previous_word(wme, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
 		}
 		if (strcmp(command, "scroll-down") == 0 ||
 		    strcmp(command, "scroll-down-and-cancel") == 0) {
@@ -2218,41 +2215,44 @@ window_copy_cursor_jump_to_back(struct window_mode_entry *wme)
 
 static void
 window_copy_cursor_next_word(struct window_mode_entry *wme,
-    const char *separators)
+    const char *class1)
 {
 	struct window_copy_mode_data	*data = wme->data;
 	struct screen			*back_s = data->backing;
 	u_int				 px, py, xx, yy;
-	int				 expected = 0;
+	int				 state = -1;
 
 	px = data->cx;
 	py = screen_hsize(back_s) + data->cy - data->oy;
 	xx = window_copy_find_length(wme, py);
 	yy = screen_hsize(back_s) + screen_size_y(back_s) - 1;
 
-	/*
-	 * First skip past any nonword characters and then any word characters.
-	 *
-	 * expected is initially set to 0 for the former and then 1 for the
-	 * latter.
-	 */
-	do {
-		while (px > xx ||
-		    window_copy_in_set(wme, px, py, separators) == expected) {
-			/* Move down if we're past the end of the line. */
-			if (px > xx) {
-				if (py == yy)
-					return;
-				window_copy_cursor_down(wme, 0);
-				px = 0;
-
-				py = screen_hsize(back_s) + data->cy - data->oy;
-				xx = window_copy_find_length(wme, py);
-			} else
-				px++;
+	while (1) {
+		if (px > xx) {
+			if (py == yy) {
+				return;
+			}
+			window_copy_cursor_down(wme, 0);
+			px = 0;
+			py = screen_hsize(back_s) + data->cy - data->oy;
+			xx = window_copy_find_length(wme, py);
+			continue;
 		}
-		expected = !expected;
-	} while (expected == 1);
+		if (px == xx || window_copy_in_set(wme, px, py, " ")) {
+			state = 0;
+		} else if (window_copy_in_set(wme, px, py, class1)) {
+			if (state == 0 || state == 2) {
+				break;
+			}
+			state = 1;
+		} else {
+			if (state == 0 || state == 1) {
+				break;
+			}
+			state = 2;
+		}
+		++px;
+	}
 
 	window_copy_update_cursor(wme, px, data->cy);
 	if (window_copy_update_selection(wme))
@@ -2261,49 +2261,57 @@ window_copy_cursor_next_word(struct window_mode_entry *wme,
 
 static void
 window_copy_cursor_next_word_end(struct window_mode_entry *wme,
-    const char *separators)
+    const char *class1)
 {
 	struct window_pane		*wp = wme->wp;
 	struct window_copy_mode_data	*data = wme->data;
-	struct options			*oo = wp->window->options;
 	struct screen			*back_s = data->backing;
-	u_int				 px, py, xx, yy;
-	int				 expected = 1;
+	u_int				 px, px_plus_one, py, xx, yy;
+	int				 state = -1;
 
-	px = data->cx;
+	px_plus_one = data->cx + 1;
 	py = screen_hsize(back_s) + data->cy - data->oy;
 	xx = window_copy_find_length(wme, py);
 	yy = screen_hsize(back_s) + screen_size_y(back_s) - 1;
 
-	if (!window_copy_in_set(wme, px, py, separators))
-		px++;
-
-	/*
-	 * First skip past any word characters, then any nonword characters.
-	 *
-	 * expected is initially set to 1 for the former and then 0 for the
-	 * latter.
-	 */
-	do {
-		while (px > xx ||
-		    window_copy_in_set(wme, px, py, separators) == expected) {
-			/* Move down if we're past the end of the line. */
-			if (px > xx) {
-				if (py == yy)
-					return;
-				window_copy_cursor_down(wme, 0);
-				px = 0;
-
-				py = screen_hsize(back_s) + data->cy - data->oy;
-				xx = window_copy_find_length(wme, py);
-			} else
-				px++;
+	while (1) {
+		if (px_plus_one >= xx || window_copy_in_set(wme, px_plus_one, py, " ")) {
+			if (state > 0) {
+				break;
+			}
+			state = 0;
+		} else if (window_copy_in_set(wme, px_plus_one, py, class1)) {
+			if (state == 2) {
+				break;
+			}
+			state = 1;
+		} else {
+			if (state == 1) {
+				break;
+			}
+			state = 2;
 		}
-		expected = !expected;
-	} while (expected == 0);
 
-	if (px != 0)
-		px--;
+		if (px_plus_one >= xx) {
+			if (py == yy) {
+				return;
+			}
+			window_copy_cursor_down(wme, 0);
+			px_plus_one = 0;
+			py = screen_hsize(back_s) + data->cy - data->oy;
+			xx = window_copy_find_length(wme, py);
+		} else {
+			++px_plus_one;
+		}
+	}
+
+	if (px_plus_one > 0) {
+		px = px_plus_one - 1;
+	} else {
+		// not generally reachable, but if we ran off the end of the
+		// entire buffer we'll get here
+		px = 0;
+	}
 
 	window_copy_update_cursor(wme, px, data->cy);
 	if (window_copy_update_selection(wme))
@@ -2313,37 +2321,47 @@ window_copy_cursor_next_word_end(struct window_mode_entry *wme,
 /* Move to the previous place where a word begins. */
 static void
 window_copy_cursor_previous_word(struct window_mode_entry *wme,
-    const char *separators)
+    const char *class1)
 {
 	struct window_copy_mode_data	*data = wme->data;
 	u_int				 px, py;
+	int				 state = -1;
 
 	px = data->cx;
 	py = screen_hsize(data->backing) + data->cy - data->oy;
 
-	/* Move back to the previous word character. */
-	for (;;) {
-		if (px > 0) {
-			px--;
-			if (!window_copy_in_set(wme, px, py, separators))
+	while (1) {
+		if (px == 0 || window_copy_in_set(wme, px - 1, py, " ")) {
+			if (state > 0) {
 				break;
+			}
+			state = 0;
+		} else if (window_copy_in_set(wme, px - 1, py, class1)) {
+			if (state == 2) {
+				break;
+			}
+			state = 1;
 		} else {
+			if (state == 1) {
+				break;
+			}
+			state = 2;
+		}
+
+		if (px == 0) {
 			if (data->cy == 0 &&
 			    (screen_hsize(data->backing) == 0 ||
 			    data->oy >= screen_hsize(data->backing) - 1))
-				goto out;
+				return;
 			window_copy_cursor_up(wme, 0);
-
 			py = screen_hsize(data->backing) + data->cy - data->oy;
 			px = window_copy_find_length(wme, py);
 		}
+		else {
+			--px;
+		}
 	}
 
-	/* Move back to the beginning of this word. */
-	while (px > 0 && !window_copy_in_set(wme, px - 1, py, separators))
-		px--;
-
-out:
 	window_copy_update_cursor(wme, px, data->cy);
 	if (window_copy_update_selection(wme))
 		window_copy_redraw_lines(wme, data->cy, 1);
