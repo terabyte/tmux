@@ -102,8 +102,10 @@ static void	window_copy_cursor_up(struct window_mode_entry *, int);
 static void	window_copy_cursor_down(struct window_mode_entry *, int);
 static void	window_copy_cursor_jump(struct window_mode_entry *);
 static void	window_copy_cursor_jump_back(struct window_mode_entry *);
-static void	window_copy_cursor_jump_to(struct window_mode_entry *);
-static void	window_copy_cursor_jump_to_back(struct window_mode_entry *);
+static void	window_copy_cursor_jump_to(struct window_mode_entry *, int, int);
+static void	window_copy_cursor_jump_to_single(struct window_mode_entry *, int);
+static void	window_copy_cursor_jump_to_back(struct window_mode_entry *, int, int);
+static void	window_copy_cursor_jump_to_back_single(struct window_mode_entry *, int);
 static void	window_copy_cursor_next_word(struct window_mode_entry *,
 		    const char *);
 static void	window_copy_cursor_next_word_end(struct window_mode_entry *,
@@ -720,12 +722,10 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 					window_copy_cursor_jump_back(wme);
 				break;
 			case WINDOW_COPY_JUMPTOFORWARD:
-				for (; np != 0; np--)
-					window_copy_cursor_jump_to(wme);
+				window_copy_cursor_jump_to(wme, 1, np);
 				break;
 			case WINDOW_COPY_JUMPTOBACKWARD:
-				for (; np != 0; np--)
-					window_copy_cursor_jump_to_back(wme);
+				window_copy_cursor_jump_to_back(wme, 1, np);
 				break;
 			}
 		}
@@ -740,12 +740,10 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 					window_copy_cursor_jump(wme);
 				break;
 			case WINDOW_COPY_JUMPTOFORWARD:
-				for (; np != 0; np--)
-					window_copy_cursor_jump_to_back(wme);
+				window_copy_cursor_jump_to_back(wme, 1, np);
 				break;
 			case WINDOW_COPY_JUMPTOBACKWARD:
-				for (; np != 0; np--)
-					window_copy_cursor_jump_to(wme);
+				window_copy_cursor_jump_to(wme, 1, np);
 				break;
 			}
 		}
@@ -916,14 +914,12 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 		if (strcmp(command, "jump-to-backward") == 0) {
 			data->jumptype = WINDOW_COPY_JUMPTOBACKWARD;
 			data->jumpchar = *argument;
-			for (; np != 0; np--)
-				window_copy_cursor_jump_to_back(wme);
+			window_copy_cursor_jump_to_back(wme, 0, np);
 		}
 		if (strcmp(command, "jump-to-forward") == 0) {
 			data->jumptype = WINDOW_COPY_JUMPTOFORWARD;
 			data->jumpchar = *argument;
-			for (; np != 0; np--)
-				window_copy_cursor_jump_to(wme);
+			window_copy_cursor_jump_to(wme, 0, np);
 		}
 		if (strcmp(command, "search-backward") == 0) {
 			data->searchtype = WINDOW_COPY_SEARCHUP;
@@ -2157,14 +2153,25 @@ window_copy_cursor_jump_back(struct window_mode_entry *wme)
 }
 
 static void
-window_copy_cursor_jump_to(struct window_mode_entry *wme)
+window_copy_cursor_jump_to(struct window_mode_entry *wme, int jump_again, int count)
+{
+	int i;
+
+	for (i = 0; i < count; ++i) {
+		window_copy_cursor_jump_to_single(wme, jump_again);
+		jump_again = 1;
+	}
+}
+
+static void
+window_copy_cursor_jump_to_single(struct window_mode_entry *wme, int jump_again)
 {
 	struct window_copy_mode_data	*data = wme->data;
 	struct screen			*back_s = data->backing;
 	struct grid_cell		 gc;
 	u_int				 px, py, xx;
 
-	px = data->cx + 2;
+	px = data->cx + 1 + jump_again;
 	py = screen_hsize(back_s) + data->cy - data->oy;
 	xx = window_copy_find_length(wme, py);
 
@@ -2182,7 +2189,18 @@ window_copy_cursor_jump_to(struct window_mode_entry *wme)
 }
 
 static void
-window_copy_cursor_jump_to_back(struct window_mode_entry *wme)
+window_copy_cursor_jump_to_back(struct window_mode_entry *wme, int jump_again, int count)
+{
+	int i;
+
+	for (i = 0; i < count; ++i) {
+		window_copy_cursor_jump_to_back_single(wme, jump_again);
+		jump_again = 1;
+	}
+}
+
+static void
+window_copy_cursor_jump_to_back_single(struct window_mode_entry *wme, int jump_again)
 {
 	struct window_copy_mode_data	*data = wme->data;
 	struct screen			*back_s = data->backing;
@@ -2195,7 +2213,7 @@ window_copy_cursor_jump_to_back(struct window_mode_entry *wme)
 	if (px > 0)
 		px--;
 
-	if (px > 0)
+	if (jump_again && px > 0)
 		px--;
 
 	for (;;) {
