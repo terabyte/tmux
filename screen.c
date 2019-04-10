@@ -27,7 +27,6 @@
 /* Selected area in screen. */
 struct screen_sel {
 	int		 hidden;
-	int		 modekeys;
 
 	u_int		 sx;
 	u_int		 sy;
@@ -307,7 +306,7 @@ screen_resize_y(struct screen *s, u_int sy)
 /* Set selection. */
 void
 screen_set_selection(struct screen *s, u_int sx, u_int sy,
-    u_int ex, u_int ey, int modekeys, u_int leftprunex, u_int rightprunex,
+    u_int ex, u_int ey, u_int leftprunex, u_int rightprunex,
     struct grid_cell *gc)
 {
 	if (s->sel == NULL)
@@ -315,7 +314,6 @@ screen_set_selection(struct screen *s, u_int sx, u_int sy,
 
 	memcpy(&s->sel->cell, gc, sizeof s->sel->cell);
 	s->sel->hidden = 0;
-	s->sel->modekeys = modekeys;
 
 	s->sel->sx = sx;
 	s->sel->sy = sy;
@@ -370,10 +368,7 @@ screen_check_selection(struct screen *s, u_int px, u_int py)
 		if (py == sel->sy && px < sel->sx)
 			return (0);
 
-		if (sel->modekeys == MODEKEY_EMACS)
-			xx = (sel->ex == 0 ? 0 : sel->ex - 1);
-		else
-			xx = sel->ex;
+		xx = sel->ex;
 		if (py == sel->ey && px > xx)
 			return (0);
 	} else if (sel->sy > sel->ey) {
@@ -384,10 +379,7 @@ screen_check_selection(struct screen *s, u_int px, u_int py)
 		if (py == sel->ey && px < sel->ex)
 			return (0);
 
-		if (sel->modekeys == MODEKEY_EMACS)
-			xx = sel->sx - 1;
-		else
-			xx = sel->sx;
+		xx = sel->sx;
 		if (py == sel->sy && (sel->sx == 0 || px > xx))
 			return (0);
 	} else {
@@ -397,18 +389,12 @@ screen_check_selection(struct screen *s, u_int px, u_int py)
 
 		if (sel->ex < sel->sx) {
 			/* cursor (ex) is on the left */
-			if (sel->modekeys == MODEKEY_EMACS)
-				xx = sel->sx - 1;
-			else
-				xx = sel->sx;
+			xx = sel->sx;
 			if (px > xx || px < sel->ex)
 				return (0);
 		} else {
 			/* selection start (sx) is on the left */
-			if (sel->modekeys == MODEKEY_EMACS)
-				xx = (sel->ex == 0 ? 0 : sel->ex - 1);
-			else
-				xx = sel->ex;
+			xx = sel->ex;
 			if (px < sel->sx || px > xx)
 				return (0);
 		}
