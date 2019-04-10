@@ -27,7 +27,6 @@
 /* Selected area in screen. */
 struct screen_sel {
 	int		 hidden;
-	int		 rectangle;
 	int		 modekeys;
 
 	u_int		 sx;
@@ -308,7 +307,7 @@ screen_resize_y(struct screen *s, u_int sy)
 /* Set selection. */
 void
 screen_set_selection(struct screen *s, u_int sx, u_int sy,
-    u_int ex, u_int ey, u_int rectangle, int modekeys, u_int leftprunex, u_int rightprunex,
+    u_int ex, u_int ey, int modekeys, u_int leftprunex, u_int rightprunex,
     struct grid_cell *gc)
 {
 	if (s->sel == NULL)
@@ -316,7 +315,6 @@ screen_set_selection(struct screen *s, u_int sx, u_int sy,
 
 	memcpy(&s->sel->cell, gc, sizeof s->sel->cell);
 	s->sel->hidden = 0;
-	s->sel->rectangle = rectangle;
 	s->sel->modekeys = modekeys;
 
 	s->sel->sx = sx;
@@ -360,96 +358,59 @@ screen_check_selection(struct screen *s, u_int px, u_int py)
 	if (px > sel->rightprunex)
 		return (0);
 
-	if (sel->rectangle) {
-		if (sel->sy < sel->ey) {
-			/* start line < end line -- downward selection. */
-			if (py < sel->sy || py > sel->ey)
-				return (0);
-		} else if (sel->sy > sel->ey) {
-			/* start line > end line -- upward selection. */
-			if (py > sel->sy || py < sel->ey)
-				return (0);
-		} else {
-			/* starting line == ending line. */
-			if (py != sel->sy)
-				return (0);
-		}
+	/*
+	 * Like emacs, keep the top-left-most character, and drop the
+	 * bottom-right-most, regardless of copy direction.
+	 */
+	if (sel->sy < sel->ey) {
+		/* starting line < ending line -- downward selection. */
+		if (py < sel->sy || py > sel->ey)
+			return (0);
 
-		/*
-		 * Need to include the selection start row, but not the cursor
-		 * row, which means the selection changes depending on which
-		 * one is on the left.
-		 */
-		if (sel->ex < sel->sx) {
-			/* Cursor (ex) is on the left. */
-			if (px < sel->ex)
-				return (0);
+		if (py == sel->sy && px < sel->sx)
+			return (0);
 
-			if (px > sel->sx)
-				return (0);
-		} else {
-			/* Selection start (sx) is on the left. */
-			if (px < sel->sx)
-				return (0);
+		if (sel->modekeys == MODEKEY_EMACS)
+			xx = (sel->ex == 0 ? 0 : sel->ex - 1);
+		else
+			xx = sel->ex;
+		if (py == sel->ey && px > xx)
+			return (0);
+	} else if (sel->sy > sel->ey) {
+		/* starting line > ending line -- upward selection. */
+		if (py > sel->sy || py < sel->ey)
+			return (0);
 
-			if (px > sel->ex)
-				return (0);
-		}
+		if (py == sel->ey && px < sel->ex)
+			return (0);
+
+		if (sel->modekeys == MODEKEY_EMACS)
+			xx = sel->sx - 1;
+		else
+			xx = sel->sx;
+		if (py == sel->sy && (sel->sx == 0 || px > xx))
+			return (0);
 	} else {
-		/*
-		 * Like emacs, keep the top-left-most character, and drop the
-		 * bottom-right-most, regardless of copy direction.
-		 */
-		if (sel->sy < sel->ey) {
-			/* starting line < ending line -- downward selection. */
-			if (py < sel->sy || py > sel->ey)
-				return (0);
+		/* starting line == ending line. */
+		if (py != sel->sy)
+			return (0);
 
-			if (py == sel->sy && px < sel->sx)
-				return (0);
-
-			if (sel->modekeys == MODEKEY_EMACS)
-				xx = (sel->ex == 0 ? 0 : sel->ex - 1);
-			else
-				xx = sel->ex;
-			if (py == sel->ey && px > xx)
-				return (0);
-		} else if (sel->sy > sel->ey) {
-			/* starting line > ending line -- upward selection. */
-			if (py > sel->sy || py < sel->ey)
-				return (0);
-
-			if (py == sel->ey && px < sel->ex)
-				return (0);
-
+		if (sel->ex < sel->sx) {
+			/* cursor (ex) is on the left */
 			if (sel->modekeys == MODEKEY_EMACS)
 				xx = sel->sx - 1;
 			else
 				xx = sel->sx;
-			if (py == sel->sy && (sel->sx == 0 || px > xx))
+			if (px > xx || px < sel->ex)
 				return (0);
 		} else {
-			/* starting line == ending line. */
-			if (py != sel->sy)
+			/* selection start (sx) is on the left */
+			if (sel->modekeys == MODEKEY_EMACS)
+				xx = (sel->ex == 0 ? 0 : sel->ex - 1);
+			else
+				xx = sel->ex;
+			if (px < sel->sx || px > xx)
 				return (0);
-
-			if (sel->ex < sel->sx) {
-				/* cursor (ex) is on the left */
-				if (sel->modekeys == MODEKEY_EMACS)
-					xx = sel->sx - 1;
-				else
-					xx = sel->sx;
-				if (px > xx || px < sel->ex)
-					return (0);
-			} else {
-				/* selection start (sx) is on the left */
-				if (sel->modekeys == MODEKEY_EMACS)
-					xx = (sel->ex == 0 ? 0 : sel->ex - 1);
-				else
-					xx = sel->ex;
-				if (px < sel->sx || px > xx)
-					return (0);
-			}
 		}
 	}
 
