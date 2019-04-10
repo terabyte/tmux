@@ -75,8 +75,8 @@ static void	window_copy_update_cursor(struct window_mode_entry *, u_int,
 static void	window_copy_start_selection(struct window_mode_entry *);
 static int	window_copy_adjust_selection(struct window_mode_entry *,
 		    u_int *, u_int *);
-static int	window_copy_set_selection(struct window_mode_entry *, int);
-static int	window_copy_update_selection(struct window_mode_entry *, int);
+static int	window_copy_set_selection(struct window_mode_entry *);
+static int	window_copy_update_selection(struct window_mode_entry *);
 static void	window_copy_synchronize_cursor(struct window_mode_entry *);
 static void    *window_copy_get_selection(struct window_mode_entry *, size_t *);
 static void	window_copy_copy_buffer(struct window_mode_entry *, void *,
@@ -458,7 +458,7 @@ window_copy_pageup1(struct window_mode_entry *wme, int half_page)
 		data->cx > px)
 		window_copy_cursor_end_of_line(wme);
 
-	window_copy_update_selection(wme, 1);
+	window_copy_update_selection(wme);
 	window_copy_redraw_screen(wme);
 }
 
@@ -504,7 +504,7 @@ window_copy_pagedown(struct window_mode_entry *wme, int half_page,
 
 	if (scroll_exit && data->oy == 0)
 		return (1);
-	window_copy_update_selection(wme, 1);
+	window_copy_update_selection(wme);
 	window_copy_redraw_screen(wme);
 	return (0);
 }
@@ -649,7 +649,7 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 		if (strcmp(command, "bottom-line") == 0) {
 			data->cx = 0;
 			data->cy = screen_size_y(sn) - 1;
-			window_copy_update_selection(wme, 1);
+			window_copy_update_selection(wme);
 			redraw = 1;
 		}
 		if (strcmp(command, "cancel") == 0)
@@ -735,14 +735,14 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 			data->cx = 0;
 			data->cy = screen_size_y(sn) - 1;
 			data->oy = 0;
-			window_copy_update_selection(wme, 1);
+			window_copy_update_selection(wme);
 			redraw = 1;
 		}
 		if (strcmp(command, "history-top") == 0) {
 			data->cx = 0;
 			data->cy = 0;
 			data->oy = screen_hsize(data->backing);
-			window_copy_update_selection(wme, 1);
+			window_copy_update_selection(wme);
 			redraw = 1;
 		}
 		if (strcmp(command, "jump-again") == 0) {
@@ -788,7 +788,7 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 		if (strcmp(command, "middle-line") == 0) {
 			data->cx = 0;
 			data->cy = (screen_size_y(sn) - 1) / 2;
-			window_copy_update_selection(wme, 1);
+			window_copy_update_selection(wme);
 			redraw = 1;
 		}
 		if (strcmp(command, "next-paragraph") == 0) {
@@ -902,7 +902,7 @@ window_copy_command(struct window_mode_entry *wme, struct client *c,
 		if (strcmp(command, "top-line") == 0) {
 			data->cx = 0;
 			data->cy = 0;
-			window_copy_update_selection(wme, 1);
+			window_copy_update_selection(wme);
 			redraw = 1;
 		}
 
@@ -1091,7 +1091,7 @@ window_copy_scroll_to(struct window_mode_entry *wme, u_int px, u_int py)
 		data->oy = gd->hsize - offset;
 	}
 
-	window_copy_update_selection(wme, 1);
+	window_copy_update_selection(wme);
 	window_copy_redraw_screen(wme);
 }
 
@@ -1388,7 +1388,7 @@ window_copy_goto_line(struct window_mode_entry *wme, const char *linestr)
 		lineno = screen_hsize(data->backing);
 
 	data->oy = lineno;
-	window_copy_update_selection(wme, 1);
+	window_copy_update_selection(wme);
 	window_copy_redraw_screen(wme);
 }
 
@@ -1553,7 +1553,7 @@ window_copy_start_selection(struct window_mode_entry *wme)
 
 	data->cursordrag = CURSORDRAG_ENDSEL;
 
-	window_copy_set_selection(wme, 1);
+	window_copy_set_selection(wme);
 }
 
 static int
@@ -1588,18 +1588,18 @@ window_copy_adjust_selection(struct window_mode_entry *wme, u_int *selx,
 }
 
 static int
-window_copy_update_selection(struct window_mode_entry *wme, int may_redraw)
+window_copy_update_selection(struct window_mode_entry *wme)
 {
 	struct window_copy_mode_data	*data = wme->data;
 	struct screen			*s = &data->screen;
 
 	if (s->sel == NULL && data->lineflag == LINE_SEL_NONE)
 		return (0);
-	return (window_copy_set_selection(wme, may_redraw));
+	return (window_copy_set_selection(wme));
 }
 
 static int
-window_copy_set_selection(struct window_mode_entry *wme, int may_redraw)
+window_copy_set_selection(struct window_mode_entry *wme)
 {
 	struct window_pane		*wp = wme->wp;
 	struct window_copy_mode_data	*data = wme->data;
@@ -1975,7 +1975,7 @@ window_copy_cursor_start_of_line(struct window_mode_entry *wme)
 		}
 	}
 	window_copy_update_cursor(wme, 0, data->cy);
-	if (window_copy_update_selection(wme, 1))
+	if (window_copy_update_selection(wme))
 		window_copy_redraw_lines(wme, data->cy, 1);
 }
 
@@ -1998,7 +1998,7 @@ window_copy_cursor_back_to_indentation(struct window_mode_entry *wme)
 	}
 
 	window_copy_update_cursor(wme, px, data->cy);
-	if (window_copy_update_selection(wme, 1))
+	if (window_copy_update_selection(wme))
 		window_copy_redraw_lines(wme, data->cy, 1);
 }
 
@@ -2036,7 +2036,7 @@ window_copy_cursor_end_of_line(struct window_mode_entry *wme)
 	}
 	window_copy_update_cursor(wme, px, data->cy);
 
-	if (window_copy_update_selection(wme, 1))
+	if (window_copy_update_selection(wme))
 		window_copy_redraw_lines(wme, data->cy, 1);
 }
 
@@ -2087,7 +2087,7 @@ window_copy_other_end(struct window_mode_entry *wme)
 	} else
 		data->cy = cy + sely - yy;
 
-	window_copy_update_selection(wme, 1);
+	window_copy_update_selection(wme);
 	window_copy_redraw_screen(wme);
 }
 
@@ -2111,7 +2111,7 @@ window_copy_cursor_left(struct window_mode_entry *wme)
 		window_copy_cursor_end_of_line(wme);
 	} else if (cx > 0) {
 		window_copy_update_cursor(wme, cx - 1, data->cy);
-		if (window_copy_update_selection(wme, 1))
+		if (window_copy_update_selection(wme))
 			window_copy_redraw_lines(wme, data->cy, 1);
 	}
 }
@@ -2140,7 +2140,7 @@ window_copy_cursor_right(struct window_mode_entry *wme)
 			cx++;
 		}
 		window_copy_update_cursor(wme, cx, data->cy);
-		if (window_copy_update_selection(wme, 1))
+		if (window_copy_update_selection(wme))
 			window_copy_redraw_lines(wme, data->cy, 1);
 	}
 }
@@ -2173,7 +2173,7 @@ window_copy_cursor_up(struct window_mode_entry *wme, int scroll_only)
 		}
 	} else {
 		window_copy_update_cursor(wme, data->cx, data->cy - 1);
-		if (window_copy_update_selection(wme, 1)) {
+		if (window_copy_update_selection(wme)) {
 			if (data->cy == screen_size_y(s) - 1)
 				window_copy_redraw_lines(wme, data->cy, 1);
 			else
@@ -2217,7 +2217,7 @@ window_copy_cursor_down(struct window_mode_entry *wme, int scroll_only)
 			window_copy_redraw_lines(wme, data->cy - 1, 2);
 	} else {
 		window_copy_update_cursor(wme, data->cx, data->cy + 1);
-		if (window_copy_update_selection(wme, 1))
+		if (window_copy_update_selection(wme))
 			window_copy_redraw_lines(wme, data->cy - 1, 2);
 	}
 
@@ -2250,7 +2250,7 @@ window_copy_cursor_jump(struct window_mode_entry *wme)
 		if (!(gc.flags & GRID_FLAG_PADDING) &&
 		    gc.data.size == 1 && *gc.data.data == data->jumpchar) {
 			window_copy_update_cursor(wme, px, data->cy);
-			if (window_copy_update_selection(wme, 1))
+			if (window_copy_update_selection(wme))
 				window_copy_redraw_lines(wme, data->cy, 1);
 			return;
 		}
@@ -2277,7 +2277,7 @@ window_copy_cursor_jump_back(struct window_mode_entry *wme)
 		if (!(gc.flags & GRID_FLAG_PADDING) &&
 		    gc.data.size == 1 && *gc.data.data == data->jumpchar) {
 			window_copy_update_cursor(wme, px, data->cy);
-			if (window_copy_update_selection(wme, 1))
+			if (window_copy_update_selection(wme))
 				window_copy_redraw_lines(wme, data->cy, 1);
 			return;
 		}
@@ -2304,7 +2304,7 @@ window_copy_cursor_jump_to(struct window_mode_entry *wme)
 		if (!(gc.flags & GRID_FLAG_PADDING) &&
 		    gc.data.size == 1 && *gc.data.data == data->jumpchar) {
 			window_copy_update_cursor(wme, px - 1, data->cy);
-			if (window_copy_update_selection(wme, 1))
+			if (window_copy_update_selection(wme))
 				window_copy_redraw_lines(wme, data->cy, 1);
 			return;
 		}
@@ -2334,7 +2334,7 @@ window_copy_cursor_jump_to_back(struct window_mode_entry *wme)
 		if (!(gc.flags & GRID_FLAG_PADDING) &&
 		    gc.data.size == 1 && *gc.data.data == data->jumpchar) {
 			window_copy_update_cursor(wme, px + 1, data->cy);
-			if (window_copy_update_selection(wme, 1))
+			if (window_copy_update_selection(wme))
 				window_copy_redraw_lines(wme, data->cy, 1);
 			return;
 		}
@@ -2383,7 +2383,7 @@ window_copy_cursor_next_word(struct window_mode_entry *wme,
 	} while (expected == 1);
 
 	window_copy_update_cursor(wme, px, data->cy);
-	if (window_copy_update_selection(wme, 1))
+	if (window_copy_update_selection(wme))
 		window_copy_redraw_lines(wme, data->cy, 1);
 }
 
@@ -2435,7 +2435,7 @@ window_copy_cursor_next_word_end(struct window_mode_entry *wme,
 		px--;
 
 	window_copy_update_cursor(wme, px, data->cy);
-	if (window_copy_update_selection(wme, 1))
+	if (window_copy_update_selection(wme))
 		window_copy_redraw_lines(wme, data->cy, 1);
 }
 
@@ -2474,7 +2474,7 @@ window_copy_cursor_previous_word(struct window_mode_entry *wme,
 
 out:
 	window_copy_update_cursor(wme, px, data->cy);
-	if (window_copy_update_selection(wme, 1))
+	if (window_copy_update_selection(wme))
 		window_copy_redraw_lines(wme, data->cy, 1);
 }
 
@@ -2492,7 +2492,7 @@ window_copy_scroll_up(struct window_mode_entry *wme, u_int ny)
 		return;
 	data->oy -= ny;
 
-	window_copy_update_selection(wme, 0);
+	window_copy_update_selection(wme);
 
 	screen_write_start(&ctx, wp, NULL);
 	screen_write_cursormove(&ctx, 0, 0, 0);
@@ -2526,7 +2526,7 @@ window_copy_scroll_down(struct window_mode_entry *wme, u_int ny)
 		return;
 	data->oy += ny;
 
-	window_copy_update_selection(wme, 0);
+	window_copy_update_selection(wme);
 
 	screen_write_start(&ctx, wp, NULL);
 	screen_write_cursormove(&ctx, 0, 0, 0);
@@ -2612,7 +2612,7 @@ window_copy_drag_update(struct client *c, struct mouse_event *m)
 	old_cy = data->cy;
 
 	window_copy_update_cursor(wme, x, y);
-	if (window_copy_update_selection(wme, 1))
+	if (window_copy_update_selection(wme))
 		window_copy_redraw_selection(wme, old_cy);
 }
 
@@ -2623,7 +2623,7 @@ window_copy_left_prune(struct window_mode_entry *wme)
 	if (!data->rightprunex_set || data->cx <= data->rightprunex) {
 		data->leftprunex = data->cx;
 		data->leftprunex_set = 1;
-		window_copy_update_selection(wme, 1);
+		window_copy_update_selection(wme);
 		window_copy_redraw_screen(wme);
 	}
 }
@@ -2635,7 +2635,7 @@ window_copy_right_prune(struct window_mode_entry *wme)
 	if (!data->leftprunex_set || data->cx >= data->leftprunex) {
 		data->rightprunex = data->cx;
 		data->rightprunex_set = 1;
-		window_copy_update_selection(wme, 1);
+		window_copy_update_selection(wme);
 		window_copy_redraw_screen(wme);
 	}
 }
