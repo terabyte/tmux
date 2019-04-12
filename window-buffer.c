@@ -149,7 +149,9 @@ window_buffer_build(void *modedata, u_int sort_type, __unused uint64_t *tag,
 		item = window_buffer_add_item(data);
 		item->name = xstrdup(paste_buffer_name(pb));
 		paste_buffer_data(pb, &item->size);
-		item->order = paste_buffer_order(pb);
+		// order + 1 to avoid anyone having 0 (which mode-tree code will start
+		// selected, arggh)
+		item->order = paste_buffer_order(pb) + 1;
 	}
 
 	switch (sort_type) {
