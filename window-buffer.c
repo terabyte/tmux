@@ -36,7 +36,7 @@ static void		 window_buffer_key(struct window_mode_entry *,
 #define WINDOW_BUFFER_DEFAULT_COMMAND "paste-buffer -b '%%'"
 
 #define WINDOW_BUFFER_DEFAULT_FORMAT \
-	"#{buffer_size} bytes (#{t:buffer_created})"
+	"#{buffer_size} bytes (#{t:buffer_created}): #{buffer_sample}"
 
 const struct window_mode window_buffer_mode = {
 	.name = "buffer-mode",
